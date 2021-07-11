@@ -79,6 +79,9 @@ is.factor(d$basceIncome.f)
 d$parentseducation.f <- factor(d$BYPARED)
 is.factor(d$parentseducation.f)
 
+#create dummy on whether or not either parent has a postsecondary degree
+d$parred <- as.integer(d$BYPARED > 3)
+
 #dummy variables
 d$male<-as.integer(d$BYS14==1)
 d$mard_cohab<-as.integer(d$F3MARRSTATUS%in%c(1,2,4,6))
@@ -105,6 +108,7 @@ d<-d%>%mutate(biracial=as.integer(d$BYRACE==6))
 # REF: https://bookdown.org/ccolonescu/RPoE4/random-regressors.html
 # can I use this for binary endogenous? if not I have to perform the tests for endogeniety and week instruments
 library(AER)
+library(stargazer)
 # fm<-ivreg(d$logincome~d$dropouted+d$indian+d$asian+d$black+d$hispanic+d$white+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$parentseducation.f | d$indian+d$asian+d$black+d$hispanic+d$white+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA +d$parentseducation.f + d$outofstate + d$BYS33L)
 # summary(fm, diagnostics = TRUE)
 
@@ -191,3 +195,84 @@ abline(0, 0)
 attach(d)
 #https://www.econometrics-with-r.org/rwabdv.html
 linearHypothesis(droppedout.probit, test="F",  "d$BYS33L = 0",  vcov. = vcovHC(droppedout.probit, type = "HC1"))
+
+attach(d)
+
+## use BYS33L
+###################################################################################
+cor(d$dropouted, d$BYS33L)
+# try simple linear regression using endogenous dropout
+## outofstate carries the important from droppeouted which carries the importance of GPA
+# given droppedouted AND GPA outofstate is not important
+#given GPA droppedouted is not important, otherwise it is
+ols<-lm(d$logincome~d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate + d$dropouted + d$BYS33L)
+summary(ols)
+# perform the first stage regression - it is a probit model - REMOVE GPA IFF we consider it endogenous
+droppedout.probit<-glm(d$dropouted~d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f + d$basceIncome.f + d$F1S16A + d$outofstate + d$BYS33L, family = binomial(link = "probit"))
+coeftest(droppedout.probit, vcov. = vcovHC, type = "HC1")
+summary(droppedout.probit) #reports residual devians
+# compute pseudo-R2 for the probit model of mortgage denial
+pseudoR2 <- 1 - (droppedout.probit$deviance) / (droppedout.probit$null.deviance)
+pseudoR2
+#check instrument validity -> compute the F-statistics that instruements are zero in the first stage
+# Rule of thumb if the F-statistic is less than 10, then we have a weak instrument
+linearHypothesis(droppedout.probit, test="F",  "d$BYS33L = 0",  vcov. = vcovHC(droppedout.probit, type = "HC1"))
+#store the fitted values
+droppedoutHat <- fitted(droppedout.probit)
+#Next, we run the second stage regression which gives us the TSLS estimates we seek.
+ols_if<-lm(d$logincome~d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate + droppedoutHat)
+coeftest(ols_if, test="F", vcov = vcovHC, type = "HC1")
+#use ivreg with the fitted value
+ols_iv<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate | . - d$dropouted + droppedoutHat)
+coeftest(ols_iv, test="F", vcov = vcovHC, type = "HC1")
+#use ivreg with the instrument for dropedout
+#ols_iv2<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate | d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate + d$BYS33L)
+ols_iv2<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate | . - d$dropouted + d$BYS33L)
+coeftest(ols_iv2, test="F", vcov = vcovHC, type = "HC1")
+#use also GPA as endogenous
+cor(d$F3TZSTEM2GPA,d$outofstate)
+#1stage
+
+ols_iv3<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A  | . -d$dropouted -d$F3TZSTEM2GPA + d$BYS33L + d$outofstate)
+coeftest(ols_iv3, test="F", vcov = vcovHC, type = "HC1")
+
+
+## use f3iocome
+###################################################################################
+cor(d$dropouted, d$BYINCOME)
+# try simple linear regression using endogenous dropout
+## outofstate carries the important from droppeouted which carries the importance of GPA
+# given droppedouted AND GPA outofstate is not important
+#given GPA, droppedouted is not important, otherwise it is
+ols<-lm(d$logincome~d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate + d$dropouted + d$BYS33L)
+summary(ols)
+# perform the first stage regression - it is a probit model - REMOVE GPA IFF we consider it endogenous
+droppedout.probit<-glm(d$dropouted~d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f +d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate + d$BYS33L, family = binomial(link = "probit"))
+coeftest(droppedout.probit, vcov. = vcovHC, type = "HC1")
+summary(droppedout.probit) #reports residual devians
+# compute pseudo-R2 for the probit model of mortgage denial
+pseudoR2 <- 1 - (droppedout.probit$deviance) / (droppedout.probit$null.deviance)
+pseudoR2
+#check instrument validity -> compute the F-statistics that instruements are zero in the first stage
+# Rule of thumb if the F-statistic is less than 10, then we have a weak instrument
+linearHypothesis(droppedout.probit, test="F",  c("d$basceIncome.f3= 0", "d$basceIncome.f4= 0"),  vcov. = vcovHC(droppedout.probit, type = "HC1"))
+#store the fitted values
+droppedoutHat <- fitted(droppedout.probit)
+#Next, we run the second stage regression which gives us the TSLS estimates we seek.
+ols_if<-lm(d$logincome~d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f +d$F3TZSTEM2GPA + d$BYS33L + d$F1S16A + d$outofstate + droppedoutHat)
+coeftest(ols_if, test="F", vcov = vcovHC, type = "HC1")
+#use ivreg with the fitted value
+ols_iv<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f +d$F3TZSTEM2GPA + d$BYS33L + d$F1S16A + d$outofstate  | . - d$dropouted + droppedoutHat)
+coeftest(ols_iv, test="F", vcov = vcovHC, type = "HC1")
+#use ivreg with the instrument for dropedout
+#ols_iv2<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate | d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate + d$BYS33L)
+ols_iv2<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f + d$F3TZSTEM2GPA + d$BYS33L+ d$F1S16A + d$outofstate   | . - d$dropouted +  d$basceIncome.f )
+coeftest(ols_iv2, test="F", vcov = vcovHC, type = "HC1", diagnostics=TRUE)
+
+cig_iv_OR <- lm(residuals(ols_iv2) ~ incomediff + salestaxdiff + cigtaxdiff)
+
+cig_OR_test <- linearHypothesis(cig_iv_OR, 
+                                c("salestaxdiff = 0", "cigtaxdiff = 0"), 
+                                test = "Chisq")
+cig_OR_test
+
