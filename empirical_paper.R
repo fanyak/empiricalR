@@ -56,24 +56,31 @@ flt6 <-flt5%>%filter(F3D07>=0 &  F3D11 >= 0)
 flt6<-flt6%>%filter(BYPARED>0)
 
 #IV1 out of state of residense ??????????
-flt7<-flt6%>%filter(F2PS1OUT>=0 | F3PS1OUT>=0)
-flt7$outofstate<-flt7$F2PS1OUT + flt7$F3PS1OUT
-flt7<-flt7%>%filter(outofstate>=0)
-flt7$outofstate<-as.integer(flt7$outofstate>0)
+# flt7<-flt6%>%filter(F2PS1OUT>=0 | F3PS1OUT>=0)
+# flt7$outofstate<-flt7$F2PS1OUT + flt7$F3PS1OUT
+# flt7<-flt7%>%filter(outofstate>=0)
+# flt7$outofstate<-as.integer(flt7$outofstate>0)
 
 #IV taken part in counseling
-flt7<-flt7%>%filter(BYS33L>=0)
+flt7<-flt6%>%filter(BYS33L>=0)
 
 #IV for GPA years of coursework
-flt7<-flt7%>%filter(F1S16A>=0)
+#flt7<-flt7%>%filter(F1S16A>=0)
+
+flt8<-flt7%>%filter(F3A18>=0)
 
 # logincome of respondent, parents income, gpa, sex, race, biological children, adopted chilren
-d<-flt7%>%select(F3ERN2011, dropouted, logincome, BYINCOME, F3TZSTEM2GPA, BYS14, BYRACE, F3MARRSTATUS, F3D07,  F3D11, BYS33L, outofstate, F1S16A)
+d<-flt8%>%select(F3ERN2011, dropouted, logincome, BYINCOME, F1TX5MPP, BYCONEXP, BYTX5MPP, F3TZSTEM2GPA, F3A18,  BYPARED, BYS14, BYRACE, F3MARRSTATUS, F3D07,F3D11, BYS33L)
 #d<-flt6%>%select(F3ERN2011, dropouted, logincome, BYINCOME, F3TZSTEM2GPA, BYS14, BYRACE, F3MARRSTATUS, F3D07,  F3D11)
 
 # create factor for categorical variable base income
 d$basceIncome.f <- factor(d$BYINCOME)
 is.factor(d$basceIncome.f)
+#use the median base income
+# d$baseincome<-as.integer(d$BYINCOME>=8)
+d$baseincome_lower<-as.integer(d$BYINCOME<7)
+d$baseincome_higher<-as.integer(d$BYINCOME>=12)
+
 
 # create factor for categorical education of parents????????
 d$parentseducation.f <- factor(d$BYPARED)
@@ -89,28 +96,28 @@ d$mard_cohab<-as.integer(d$F3MARRSTATUS%in%c(1,2,4,6))
 #create factor for categorical of sum of biological and adoptive children
 d$children.f <-factor(d$F3D07+d$F3D11)
 is.factor(d$children.f)
-
-#create factor for categorical of sum of biological and adoptive children
-d$advancedwork.f <-factor(d$F1S16A)
-is.factor(d$advancedwork.f)
+#create binary
+d$children <-as.integer((d$F3D07+d$F3D11)>0)
 
 #create indicators for race
 #base should be white - compare with base BYRACE = 7
 # indian is only 1 -> don't incude it?
-#d<-d%>%mutate(indian=as.integer(d$BYRACE==1))
+#d<-d%>%mutate(indian=as.integer(d$BYRACE==1)) #there is only 1 
 d<-d%>%mutate(asian=as.integer(d$BYRACE==2))
 d<-d%>%mutate(black=as.integer(d$BYRACE==3))
 d<-d%>%mutate(hispanic=as.integer(d$BYRACE==4 | d$BYRACE==5))
 d<-d%>%mutate(biracial=as.integer(d$BYRACE==6))
+#white = base category
+#d<-d%>%mutate(white=as.integer(d$BYRACE==7))
 
+#d<-d%>%mutate(interaction=d$F3A18*d$baseincome_lower)
 
 #1. test for endogeneity and weak instruments
 # REF: https://bookdown.org/ccolonescu/RPoE4/random-regressors.html
 # can I use this for binary endogenous? if not I have to perform the tests for endogeniety and week instruments
 library(AER)
 library(stargazer)
-# fm<-ivreg(d$logincome~d$dropouted+d$indian+d$asian+d$black+d$hispanic+d$white+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$parentseducation.f | d$indian+d$asian+d$black+d$hispanic+d$white+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA +d$parentseducation.f + d$outofstate + d$BYS33L)
-# summary(fm, diagnostics = TRUE)
+summary(d)
 
 #2.try 1st stage of 2sls 
 # regress droppedout on all exogenous and instruments
@@ -237,42 +244,51 @@ ols_iv3<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$m
 coeftest(ols_iv3, test="F", vcov = vcovHC, type = "HC1")
 
 
-## use f3iocome
+## use f3inocome if more that >10
 ###################################################################################
-cor(d$dropouted, d$BYINCOME)
+cor(d$dropouted, d$F3A18)#BYTX5MPP, BYS33L, F3A18
 # try simple linear regression using endogenous dropout
 ## outofstate carries the important from droppeouted which carries the importance of GPA
 # given droppedouted AND GPA outofstate is not important
 #given GPA, droppedouted is not important, otherwise it is
-ols<-lm(d$logincome~d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate + d$dropouted + d$BYS33L)
-summary(ols)
+ols<-lm(d$logincome~d$black+d$hispanic+d$asian +d$biracial+d$male+d$mard_cohab+d$children + d$F3A18 + d$basceIncome.f  + d$BYTX5MPP +d$BYCONEXP +d$F3TZSTEM2GPA  + d$dropouted + d$BYS33L + d$parred)
+coeftest(ols, vcov. = vcovHC, type = "HC1")
+#summary(ols)
 # perform the first stage regression - it is a probit model - REMOVE GPA IFF we consider it endogenous
-droppedout.probit<-glm(d$dropouted~d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f +d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate + d$BYS33L, family = binomial(link = "probit"))
+droppedout.probit<-glm(d$dropouted~d$black+d$hispanic+d$asian+d$biracial+d$male+d$mard_cohab+d$children+d$F3A18 + d$basceIncome.f +d$BYCONEXP + d$BYTX5MPP + d$F3TZSTEM2GPA+ d$BYS33L + d$parred, family = binomial(link = "probit"))
 coeftest(droppedout.probit, vcov. = vcovHC, type = "HC1")
-summary(droppedout.probit) #reports residual devians
+#summary(droppedout.probit) #reports residual devians
 # compute pseudo-R2 for the probit model of mortgage denial
 pseudoR2 <- 1 - (droppedout.probit$deviance) / (droppedout.probit$null.deviance)
 pseudoR2
 #check instrument validity -> compute the F-statistics that instruements are zero in the first stage
 # Rule of thumb if the F-statistic is less than 10, then we have a weak instrument
-linearHypothesis(droppedout.probit, test="F",  c("d$basceIncome.f3= 0", "d$basceIncome.f4= 0"),  vcov. = vcovHC(droppedout.probit, type = "HC1"))
+linearHypothesis(droppedout.probit, test="F",  c("d$F3A18 = 0"),  vcov. = vcovHC(droppedout.probit, type = "HC1"))
 #store the fitted values
 droppedoutHat <- fitted(droppedout.probit)
 #Next, we run the second stage regression which gives us the TSLS estimates we seek.
-ols_if<-lm(d$logincome~d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f +d$F3TZSTEM2GPA + d$BYS33L + d$F1S16A + d$outofstate + droppedoutHat)
-coeftest(ols_if, test="F", vcov = vcovHC, type = "HC1")
+# ols_if<-lm(d$logincome~d$white+d$black+d$hispanic+d$asian+d$male+d$mard_cohab+d$children + d$F1TX5MPP + d$F3TZSTEM2GPA + d$baseincome_higher + d$outofstate + d$BYS33L + d$parred + droppedoutHat)
+# coeftest(ols_if, test="F", vcov = vcovHC, type = "HC1")
 #use ivreg with the fitted value
-ols_iv<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f +d$F3TZSTEM2GPA + d$BYS33L + d$F1S16A + d$outofstate  | . - d$dropouted + droppedoutHat)
+ols_iv<-ivreg(d$logincome~d$dropouted+d$black+d$hispanic+d$asian +d$biracial+d$male+d$mard_cohab+d$children + d$basceIncome.f  + d$BYTX5MPP +d$BYCONEXP  + d$F3TZSTEM2GPA+ d$BYS33L + d$parred | . - d$dropouted + droppedoutHat)
 coeftest(ols_iv, test="F", vcov = vcovHC, type = "HC1")
+#https://john-d-fox.github.io/ivreg/articles/Diagnostics-for-2SLS-Regression.html
+summary(ols_iv, test="F", vcov = vcovHC, type = "HC1", diagnostics = TRUE)
 #use ivreg with the instrument for dropedout
-#ols_iv2<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate | d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+d$F3TZSTEM2GPA + d$basceIncome.f + d$F1S16A + d$outofstate + d$BYS33L)
-ols_iv2<-ivreg(d$logincome~d$dropouted+d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f + d$F3TZSTEM2GPA + d$BYS33L+ d$F1S16A + d$outofstate   | . - d$dropouted +  d$basceIncome.f )
-coeftest(ols_iv2, test="F", vcov = vcovHC, type = "HC1", diagnostics=TRUE)
+# ols_iv2<-ivreg(d$logincome~d$dropouted+d$white+d$black+d$hispanic+d$asian+d$male+d$mard_cohab+d$children+ d$interaction +d$BYCONEXP  + d$F1TX5MPP + d$F3TZSTEM2GPA + d$baseincome_higher + d$baseincome_lower  + d$outofstate + d$BYS33L + d$parred   | . - d$dropouted +  d$F3A18  )
+# coeftest(ols_iv2, test="F", vcov = vcovHC, type = "HC1", diagnostics=TRUE)
+# summary(ols_iv2, diagnostics=TRUE)
 
-cig_iv_OR <- lm(residuals(ols_iv2) ~ incomediff + salestaxdiff + cigtaxdiff)
+ft<-fitted(ols_iv)
+rta<-residuals(ols_iv)
+plot(ft,rta)
+abline(0, 0)
+
+cig_iv_OR <- lm(residuals(ols_iv) ~ d$white+d$black+d$hispanic+d$asian+d$male+d$mard_cohab+d$children +d$BYCONEXP  + d$F1TX5MPP + d$F3TZSTEM2GPA  + d$baseincome_12  + d$outofstate + d$BYS33L +d$F3A18 + d$interaction)
 
 cig_OR_test <- linearHypothesis(cig_iv_OR, 
-                                c("salestaxdiff = 0", "cigtaxdiff = 0"), 
+                                c( "d$F3A18 = 0", "d$interaction = 0"), 
                                 test = "Chisq")
 cig_OR_test
+pchisq(cig_OR_test[2, 5], df = 1, lower.tail = FALSE)
 
