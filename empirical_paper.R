@@ -11,8 +11,8 @@ flt1<-data%>%filter(F2MJR2_P %in% c(5,8,11,18,25), F3PS1RETAIN > 0)
 
 #create boolean on whether they have dropped out of college completely (not attending other) or not
 #flt2<-flt1%>%mutate(dropouted = as.integer(F3PS1RETAIN %in% c(4,5)))
-flt2<-flt1%>%mutate(dropouted = as.integer(F3PS1RETAIN ==5))
-View(flt2%>%select(F3PS1RETAIN, dropouted))
+flt2<-flt1%>%mutate(droppedOut = as.integer(F3PS1RETAIN ==5))
+View(flt2%>%select(F3PS1RETAIN, droppedOut))
 
 #bivariate with self efficacy
 # first clean up missing values
@@ -70,7 +70,7 @@ flt7<-flt6%>%filter(BYS33L>=0)
 flt8<-flt7%>%filter(F3A18>=0)
 
 # logincome of respondent, parents income, gpa, sex, race, biological children, adopted chilren
-d<-flt8%>%select(F3ERN2011, dropouted, logincome, BYINCOME, F1TX5MPP, BYCONEXP, BYTX5MPP, F3TZSTEM2GPA, F3A18,  BYPARED, BYS14, BYRACE, F3MARRSTATUS, F3D07,F3D11, BYS33L)
+d<-flt8%>%select(F3ERN2011, droppedOut, logincome, BYINCOME, F1TX5MPP, BYCONEXP, BYTX5MPP, F3TZSTEM2GPA, F3A18,  BYPARED, BYS14, BYRACE, F3MARRSTATUS, F3D07,F3D11, BYS33L)
 #d<-flt6%>%select(F3ERN2011, dropouted, logincome, BYINCOME, F3TZSTEM2GPA, BYS14, BYRACE, F3MARRSTATUS, F3D07,  F3D11)
 
 # create factor for categorical variable base income
@@ -102,7 +102,7 @@ d$children <-as.integer((d$F3D07+d$F3D11)>0)
 #create indicators for race
 #base should be white - compare with base BYRACE = 7
 # indian is only 1 -> don't incude it?
-#d<-d%>%mutate(indian=as.integer(d$BYRACE==1)) #there is only 1 
+d<-d%>%mutate(indian=as.integer(d$BYRACE==1)) #there is only 1 
 d<-d%>%mutate(asian=as.integer(d$BYRACE==2))
 d<-d%>%mutate(black=as.integer(d$BYRACE==3))
 d<-d%>%mutate(hispanic=as.integer(d$BYRACE==4 | d$BYRACE==5))
@@ -148,7 +148,7 @@ abline(0, 0)
 #use outofState as an instrument for GPA
 #holding all other factors constant, outofState affects GPA
 summary(lm(d$F3TZSTEM2GPA~d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f + d$basceIncome.f + d$advancedwork.f + d$outofstate))
-fmgpa<-ivreg(d$logincome~d$F3TZSTEM2GPA + d$dropouted +d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+ d$basceIncome.f | d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+ d$basceIncome.f + d$outofstate + d$BYS33L)
+fmgpa<-ivreg(d$logincome~d$F3TZSTEM2GPA + d$droppedOut +d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+ d$basceIncome.f | d$asian+d$black+d$hispanic+d$biracial+d$male+d$mard_cohab+d$children.f+ d$basceIncome.f + d$outofstate + d$BYS33L)
 summary(fmgpa, diagnostics = TRUE)
 
 fa<-fitted(fmgpa)
@@ -246,16 +246,17 @@ coeftest(ols_iv3, test="F", vcov = vcovHC, type = "HC1")
 
 ## use f3inocome if more that >10
 ###################################################################################
-cor(d$dropouted, d$F3A18)#BYTX5MPP, BYS33L, F3A18
+cor(d$droppedOut, d$F3A18)#BYTX5MPP, BYS33L, F3A18
+cor(d$droppedOut, d$BYS33L)
 # try simple linear regression using endogenous dropout
 ## outofstate carries the important from droppeouted which carries the importance of GPA
 # given droppedouted AND GPA outofstate is not important
 #given GPA, droppedouted is not important, otherwise it is
-ols<-lm(d$logincome~d$black+d$hispanic+d$asian +d$biracial+d$male+d$mard_cohab+d$children + d$F3A18 + d$basceIncome.f  + d$BYTX5MPP +d$BYCONEXP +d$F3TZSTEM2GPA  + d$dropouted + d$BYS33L + d$parred)
+ols<-lm(d$logincome~d$black+d$hispanic+d$asian +d$biracial+d$male+d$mard_cohab+d$children + d$basceIncome.f  + d$BYTX5MPP +d$F3TZSTEM2GPA  + d$parred + d$droppedOut + d$BYS33L + d$F3A18)
 coeftest(ols, vcov. = vcovHC, type = "HC1")
 #summary(ols)
 # perform the first stage regression - it is a probit model - REMOVE GPA IFF we consider it endogenous
-droppedout.probit<-glm(d$dropouted~d$black+d$hispanic+d$asian+d$biracial+d$male+d$mard_cohab+d$children+d$F3A18 + d$basceIncome.f +d$BYCONEXP + d$BYTX5MPP + d$F3TZSTEM2GPA+ d$BYS33L + d$parred, family = binomial(link = "probit"))
+droppedout.probit<-glm(d$droppedOut~d$black+d$hispanic+d$asian+d$biracial+d$male+d$mard_cohab+d$children  + d$parred + d$basceIncome.f + d$BYTX5MPP + d$F3TZSTEM2GPA+ d$BYS33L +d$F3A18, family = binomial(link = "probit"))
 coeftest(droppedout.probit, vcov. = vcovHC, type = "HC1")
 #summary(droppedout.probit) #reports residual devians
 # compute pseudo-R2 for the probit model of mortgage denial
@@ -270,7 +271,7 @@ droppedoutHat <- fitted(droppedout.probit)
 # ols_if<-lm(d$logincome~d$white+d$black+d$hispanic+d$asian+d$male+d$mard_cohab+d$children + d$F1TX5MPP + d$F3TZSTEM2GPA + d$baseincome_higher + d$outofstate + d$BYS33L + d$parred + droppedoutHat)
 # coeftest(ols_if, test="F", vcov = vcovHC, type = "HC1")
 #use ivreg with the fitted value
-ols_iv<-ivreg(d$logincome~d$dropouted+d$black+d$hispanic+d$asian +d$biracial+d$male+d$mard_cohab+d$children + d$basceIncome.f  + d$BYTX5MPP +d$BYCONEXP  + d$F3TZSTEM2GPA+ d$BYS33L + d$parred | . - d$dropouted + droppedoutHat)
+ols_iv<-ivreg(d$logincome~d$droppedOut+d$black+d$hispanic+d$asian +d$biracial+d$male+d$mard_cohab+d$children + d$parred + d$basceIncome.f + d$BYTX5MPP + d$F3TZSTEM2GPA  | . - d$dropouted + droppedoutHat)
 coeftest(ols_iv, test="F", vcov = vcovHC, type = "HC1")
 #https://john-d-fox.github.io/ivreg/articles/Diagnostics-for-2SLS-Regression.html
 summary(ols_iv, test="F", vcov = vcovHC, type = "HC1", diagnostics = TRUE)
@@ -292,3 +293,19 @@ cig_OR_test <- linearHypothesis(cig_iv_OR,
 cig_OR_test
 pchisq(cig_OR_test[2, 5], df = 1, lower.tail = FALSE)
 
+
+### show table 
+df <- data.frame(STEM_Students=nrow(d),Dropped_Out=sum(d$droppedOut),
+                 White = nrow(d%>%filter(BYRACE==7)),
+                 Black = nrow(d%>%filter(BYRACE==3)),
+                 Hispanic = sum(d$hispanic),
+                 Asian = nrow(d%>%filter(BYRACE==2)),
+                 Biracial = sum(d$biracial),
+                 Male = sum(d$male),
+                 Participated_in_college_prep = sum(d$BYS33L),
+                 Took_out_Student_Loan = sum(d$F3A18))
+View(t(df[,1:ncol(df),drop =F]))
+
+df1<-data.frame(correlation_droppedout_with_college_prep = cor(d$droppedOut, d$BYS33L),
+                correlation_droppedout_with_student_loan = cor(d$droppedOut, d$F3A18))
+View(t(df1[,1:ncol(df1),drop =F]))
